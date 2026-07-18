@@ -4,6 +4,7 @@ import { LogOut } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/context/auth-context'
 import { ChatSidebar } from '@/components/chat/chat-sidebar'
+import { ChatWindow } from '@/components/chat/chat-window'
 import { RenameChatDialog } from '@/components/chat/rename-chat-dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
@@ -13,7 +14,9 @@ import {
   listChats,
   renameChat,
 } from '@/lib/chats-api'
-import type { Chat } from '@/lib/types'
+import { fetchModels } from '@/lib/models-api'
+import { fetchTools } from '@/lib/tools-api'
+import type { Chat, ToolSpec } from '@/lib/types'
 
 export function ChatPage() {
   const { user, logout } = useAuth()
@@ -27,6 +30,9 @@ export function ChatPage() {
   const [renaming, setRenaming] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<Chat | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [models, setModels] = useState<string[]>([])
+  const [defaultModel, setDefaultModel] = useState<string | undefined>()
+  const [tools, setTools] = useState<ToolSpec[]>([])
 
   useEffect(() => {
     listChats()
@@ -37,6 +43,18 @@ export function ChatPage() {
         ),
       )
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    fetchModels()
+      .then((info) => {
+        setModels(info.models)
+        setDefaultModel(info.default)
+      })
+      .catch(() => undefined)
+    fetchTools()
+      .then(setTools)
+      .catch(() => undefined)
   }, [])
 
   async function handleCreate() {
@@ -79,8 +97,10 @@ export function ChatPage() {
     try {
       await deleteChat(deleteTarget.id)
       setChats((prev) => prev.filter((c) => c.id !== deleteTarget.id))
+
       if (selectedId === deleteTarget.id) setSelectedId(null)
       setDeleteTarget(null)
+    
       toast.success('Чат удалён')
     } catch (error) {
       toast.error(
@@ -94,6 +114,16 @@ export function ChatPage() {
   function handleLogoutConfirm() {
     logout()
     navigate('/login', { replace: true })
+  }
+
+  function handleChatActivity(chatId: number) {
+    setChats((prev) => {
+      const index = prev.findIndex((c) => c.id === chatId)
+      if (index <= 0) return prev
+      const next = [...prev]
+      const [moved] = next.splice(index, 1)
+      return [moved, ...next]
+    })
   }
 
   const selectedChat = chats.find((c) => c.id === selectedId) ?? null
@@ -132,13 +162,22 @@ export function ChatPage() {
           </div>
         </header>
 
-        <div className="flex flex-1 items-center justify-center p-4">
-          <p className="text-muted-foreground">
-            {selectedChat
-              ? 'Окно диалога'
-              : 'Выберите чат или создайте новый'}
-          </p>
-        </div>
+        {selectedChat ? (
+          <ChatWindow
+            key={selectedChat.id}
+            chatId={selectedChat.id}
+            models={models}
+            defaultModel={defaultModel}
+            tools={tools}
+            onActivity={handleChatActivity}
+          />
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-4">
+            <p className="text-muted-foreground">
+              Выберите чат или создайте новый
+            </p>
+          </div>
+        )}
       </div>
 
       <ConfirmDialog
