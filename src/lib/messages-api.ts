@@ -18,6 +18,17 @@ export function sendMessage(
   })
 }
 
+export function sendMessageWithTools(
+  chatId: number,
+  content: string,
+  model?: string,
+): Promise<Message> {
+  return apiFetch<Message>(`/chats/${chatId}/messages/tools`, {
+    method: 'POST',
+    body: model ? { content, model } : { content },
+  })
+}
+
 export interface StreamHandlers {
   onDelta: (text: string) => void
   onDone: (messageId: number) => void

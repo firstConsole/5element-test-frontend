@@ -23,6 +23,8 @@ export interface Message {
   role: MessageRole
   content: string
   created_at: string
+  /** Инструменты, вызванные при генерации (только для ответа /messages/tools). */
+  tools_used?: string[]
 }
 
 export interface ModelsResponse {
