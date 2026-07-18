@@ -37,8 +37,11 @@ export async function apiFetch<T>(
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
 
-  if (response.status === 401) {
+  if (response.status === 401 && auth) {
     clearToken()
+    if (window.location.pathname !== '/login') {
+      window.location.href = '/login'
+    }
   }
 
   if (!response.ok) {
