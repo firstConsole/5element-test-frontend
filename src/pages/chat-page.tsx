@@ -4,6 +4,7 @@ import { LogOut } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/context/auth-context'
 import { ChatSidebar } from '@/components/chat/chat-sidebar'
+import { ChatWindow } from '@/components/chat/chat-window'
 import { RenameChatDialog } from '@/components/chat/rename-chat-dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
@@ -96,6 +97,16 @@ export function ChatPage() {
     navigate('/login', { replace: true })
   }
 
+  function handleChatActivity(chatId: number) {
+    setChats((prev) => {
+      const index = prev.findIndex((c) => c.id === chatId)
+      if (index <= 0) return prev
+      const next = [...prev]
+      const [moved] = next.splice(index, 1)
+      return [moved, ...next]
+    })
+  }
+
   const selectedChat = chats.find((c) => c.id === selectedId) ?? null
 
   return (
@@ -132,13 +143,19 @@ export function ChatPage() {
           </div>
         </header>
 
-        <div className="flex flex-1 items-center justify-center p-4">
-          <p className="text-muted-foreground">
-            {selectedChat
-              ? 'Окно диалога'
-              : 'Выберите чат или создайте новый'}
-          </p>
-        </div>
+        {selectedChat ? (
+          <ChatWindow
+            key={selectedChat.id}
+            chatId={selectedChat.id}
+            onActivity={handleChatActivity}
+          />
+        ) : (
+          <div className="flex flex-1 items-center justify-center p-4">
+            <p className="text-muted-foreground">
+              Выберите чат или создайте новый
+            </p>
+          </div>
+        )}
       </div>
 
       <ConfirmDialog
