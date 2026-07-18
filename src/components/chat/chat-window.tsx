@@ -1,15 +1,10 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-} from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Loader2, SendHorizonal } from 'lucide-react'
 import { toast } from 'sonner'
 import { MessageBubble } from '@/components/chat/message-bubble'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { listMessages, sendMessage } from '@/lib/messages-api'
+import { listMessages, streamMessage } from '@/lib/messages-api'
 import type { Message } from '@/lib/types'
 
 interface ChatWindowProps {
@@ -23,6 +18,7 @@ export function ChatWindow({ chatId, onActivity }: ChatWindowProps) {
   const [sending, setSending] = useState(false)
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     listMessages(chatId)
@@ -36,6 +32,10 @@ export function ChatWindow({ chatId, onActivity }: ChatWindowProps) {
   }, [chatId])
 
   useEffect(() => {
+    return () => abortRef.current?.abort()
+  }, [])
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, sending])
 
@@ -43,26 +43,71 @@ export function ChatWindow({ chatId, onActivity }: ChatWindowProps) {
     const content = input.trim()
     if (!content || sending) return
 
-    const optimistic: Message = {
-      id: Date.now() * -1,
+    const now = new Date().toISOString()
+    const userMessage: Message = {
+      id: -Date.now(),
       role: 'user',
       content,
-      created_at: new Date().toISOString(),
+      created_at: now,
     }
-    setMessages((prev) => [...prev, optimistic])
+    setMessages((prev) => [...prev, userMessage])
     setInput('')
     setSending(true)
 
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    let assistantId: number | null = null
+    let accumulated = ''
+
+    const upsertAssistant = (text: string) => {
+      accumulated += text
+
+      if (assistantId === null) {
+        const id = -Date.now() - 1
+        assistantId = id
+        const created_at = new Date().toISOString()
+        
+        setMessages((prev) => [
+          ...prev,
+          { id, role: 'assistant', content: accumulated, created_at },
+        ])
+      } else {
+        const id = assistantId
+        setMessages((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, content: accumulated } : m)),
+        )
+      }
+    }
+
     try {
-      const assistant = await sendMessage(chatId, content)
-      setMessages((prev) => [...prev, assistant])
-      onActivity?.(chatId)
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : 'Не удалось получить ответ',
+      await streamMessage(
+        chatId,
+        content,
+        {
+          onDelta: upsertAssistant,
+          onError: (message) => toast.error(message),
+          onDone: (messageId) => {
+            if (assistantId !== null && messageId) {
+              const tempId = assistantId
+              setMessages((prev) =>
+                prev.map((m) => (m.id === tempId ? { ...m, id: messageId } : m)),
+              )
+            }
+            onActivity?.(chatId)
+          },
+        },
+        { signal: controller.signal },
       )
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        toast.error(
+          error instanceof Error ? error.message : 'Не удалось получить ответ',
+        )
+      }
     } finally {
       setSending(false)
+      abortRef.current = null
     }
   }
 
@@ -72,6 +117,11 @@ export function ChatWindow({ chatId, onActivity }: ChatWindowProps) {
       void handleSend()
     }
   }
+
+  const showTyping =
+    sending &&
+    (messages.length === 0 ||
+      messages[messages.length - 1].role === 'user')
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -91,7 +141,7 @@ export function ChatWindow({ chatId, onActivity }: ChatWindowProps) {
             ))
           )}
 
-          {sending && <TypingIndicator />}
+          {showTyping && <TypingIndicator />}
           <div ref={bottomRef} />
         </div>
       </div>
